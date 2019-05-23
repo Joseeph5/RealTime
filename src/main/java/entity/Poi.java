@@ -7,7 +7,7 @@ public class Poi {
 	private String address;
 	private Double latitude;
 	private Double longitude;
-
+	
 	public Integer getPointInterestId() {
 		return pointInterestId;
 	}

@@ -5,6 +5,9 @@ import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
+
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,6 +26,8 @@ import entity.Detail;
 import entity.Mission;
 import entity.Path;
 import entity.Poi;
+import entity.Suivi;
+
 
 public class hello {
 
@@ -31,36 +36,126 @@ public class hello {
 	public static String urlDetails = "http://fleet.tn/ws_rimtrack_all/paths/details/";
 	public static String urlMission = "http://127.0.0.1:8000/mission_v2";
 	public static String urlDevice = "http://127.0.0.1:8000/device";
-
+	public static String AddUrl	="http://127.0.0.1:8000/addcalsuivi";
 	public static JSONObject body;
 	public static ArrayList<Path> paths;
 	public static HttpResponse<JsonNode> jsonResponse;
 	public static List<Coordinate> corrdinateListe;
-
+	public static ArrayList<Suivi> suiviList = new ArrayList<Suivi>();
 	public static ArrayList<Mission> missionList;
 
 	public static void main(String[] args) throws UnirestException {
-
+		
+		//store();
 		getAllMissions();
 		body = new JSONObject();
-		//getCLientList();
+		
 		String token = signIn();
 		if (token.length() > 0) {
-			for (int i = 0; i < missionList.size(); i++) {
+			
+		for (int i = 0; i < missionList.size(); i++) {
 				
 				paths = new ArrayList<Path>();
 				paths = getPaths(token,missionList.get(i).getDateDeb(),missionList.get(i).getDateFin(),missionList.get(i).getDeviceId());
-					//System.out.println(paths);
-				getPassedClient(missionList.get(i).getPoi(),paths);
+					
+				getPassedClient(missionList.get(i).getIdmission(),missionList.get(i).getPoi(),paths);
 			}
 		}
+		store();
+		
 
 	}
+	private static void store() throws UnirestException {
+		
+		for (int j = 0;j < suiviList.size(); j++) {
+			System.out.println(suiviList.get(j).getGoOutTime());
+			final JSONObject ExJson = new JSONObject()
+					.put("date_visite", suiviList.get(j).getVisitedTime().toString())
+					.put("date_sortie", suiviList.get(j).getGoOutTime().toString())
+					.put("poi_visite", suiviList.get(j).getPointInterestId())
+					.put("duree", suiviList.get(j).getTime().toString());
+			final HttpResponse<String> jsonResponse = Unirest.post(AddUrl).header("content-Type", "application/json;charset=UTF-8")
+					.header("Accept", "application/json").body(ExJson).asString();
+			System.out.println(jsonResponse.getBody());
+			
+		}
+	}
+	private static void getPassedClient(Integer idMission, List<Poi> poiList,ArrayList<Path> pathList) {
 
+		boolean visited = false;
+		for (int i = 0; i < poiList.size(); i++) {
+			Poi client = poiList.get(i);
+			
+			visited = false;
+			int j = 0;
+			boolean stop = false;
+			while (j < pathList.size() && stop == false) {
+				//List<Coordinate> coordinates = paths.get(j).getCoordinates();
+				int k = 0;
+				Suivi l =new Suivi();
+				
+				Long visitedTime = null;
+				Long goOutTime;
+				String time;
+				
+					double distance = PathUtils.distance(client.getLatitude(),
+							client.getLongitude(), pathList.get(j).getBeginPathLatitude(),
+							pathList.get(j).getBeginPathLongitude(), "K");
+					try {
+						
+							
+							if (distance <= 0.3 && visited==false) {
+								visited=true;
+								// System.out.println(k<coordinates.size());
+								System.out.println("client " + client.getName() + " est visité ");
+								visitedTime =pathList.get(j).getBeginPathTime();
+								System.out.println("visited Time: "+visitedTime);
+							}
+						 else {
+							if(visited==true) {
+								
+								
+								goOutTime =pathList.get(j).getEndPathTime();
+								/*Timestamp ts=new Timestamp(goOutTime);  
+				                Date outDate=new Date(ts.getTime()); */
+							
+								System.out.println("go out Time: "+goOutTime);
+								time = pathList.get(j).getNextStopDurationStr();
+								l.setTime(time);
+								l.setVisitedTime(pathList.get(j).getBeginPathTime());
+								l.setGoOutTime(goOutTime);
+								l.setPoiName(client.getName());
+								l.setPointInterestId(client.getPointInterestId());
+								l.setIdmission(idMission);
+								suiviList.add(l);
+								System.out.println("Time: "+time);
+								System.out.println("****************************************************************************************");
+									
+								stop=true;
+								
+							}
+							/*System.out.println("CLient : " + client.getName() + ",date : "
+									+ coordinates.get(k).getDate() + " ,distance restante :" + distance);*/
+
+						}
+					} catch (NullPointerException e) {
+						// TODO: handle exception
+						//System.out.println(pathList.get(j).getBeginPathLatitude());
+					}
+				
+				j += 1;
+			}
+			if (j >= paths.size()) {
+				System.out.println("client " + client.getName() + " est non visité ");
+				System.out.println("********************************************************************************************************");
+			}
+		}
+	}
+	
 	private static Long getDeviceId(int vehiculeId) {
 		Long id = -1L;
 		try {
-			jsonResponse = Unirest.get(urlDevice + "/" + vehiculeId).asJson();
+			jsonResponse = Unirest.get(urlDevice + "/" +vehiculeId).asJson();
 			if (jsonResponse.getStatus() == 200)
 				id = jsonResponse.getBody().getArray().getJSONObject(0).getLong("id_device");
 
@@ -76,24 +171,26 @@ public class hello {
 			jsonResponse = Unirest.get(urlMission).asJson();
 			if (jsonResponse.getStatus() == 200) {
 				JSONArray result = jsonResponse.getBody().getArray();
-
+				//System.out.println(result);
 				for (int i = 0; i < result.length(); i++) {
 					JSONObject obj = result.getJSONObject(i);
-					// System.out.println(obj);
+					 //System.out.println(obj);
 					Mission m = new Mission();
 					m.setIdmission(obj.getInt("idmission"));
 					m.setDateDeb(obj.getString("date_deb"));
 					m.setDateFin(obj.getString("date_fin"));
 					m.setVehiculeId(obj.getInt("vehicule_id"));
 					Long dvceid = getDeviceId(m.getVehiculeId());
+					  //System.out.println(dvceid);
 					m.setDeviceId(dvceid);
 					ArrayList<Poi> pois = new ArrayList<Poi>();
 					JSONArray poi = obj.getJSONArray("poi");
-
+					
 					for (int j = 0; j < poi.length(); j++) {
 						JSONObject objPoi = poi.getJSONObject(j);
-						Poi p = new Poi();
 						//System.out.println(objPoi);
+						Poi p = new Poi();
+						//System.out.println(objPoi.getString("nom"));
 						p.setPointInterestId(objPoi.getInt("point_interest_id"));
 						p.setAddress(objPoi.getString("address"));
 						p.setLatitude(objPoi.getDouble("latitude"));
@@ -103,6 +200,7 @@ public class hello {
 					}
 					m.setPoi(pois);
 					missionList.add(m);
+					
 				}
 			}
 		} catch (UnirestException e1) {
@@ -111,65 +209,6 @@ public class hello {
 		}
 	}
 
-	private static void getPassedClient(List<Poi> poiList,ArrayList<Path> pathList) {
-
-		boolean visited = false;
-		
-		
-		for (int i = 0; i < poiList.size(); i++) {
-			Poi client = poiList.get(i);
-			visited = false;
-			int j = 0;
-			boolean stop = false;
-			while (j < paths.size() && stop == false) {
-				List<Coordinate> coordinates = paths.get(j).getCoordinates();
-				int k = 0;
-
-				while (k < coordinates.size() && stop == false) {
-					double distance = PathUtils.distance(client.getLatitude(),
-							client.getLongitude(), coordinates.get(k).getLat(),
-							coordinates.get(k).getLng(), "K");
-					try {
-						if (coordinates.get(k).getSpeed() == 0) {
-							
-							if (distance <= 0.3 && visited==false) {
-								visited=true;
-								// System.out.println(k<coordinates.size());
-								System.out.println("client " + client.getName() + " est visité ");
-								
-							}
-						} else {
-							if(visited==true) {
-								System.out.println("calculeeeeeeeeeeeee");
-								System.out.println(
-										"****************************************************************************************");
-									
-								stop=true;
-								
-							}
-							/*System.out.println("CLient : " + client.getName() + ",date : "
-									+ coordinates.get(k).getDate() + " ,distance restante :" + distance);*/
-
-						}
-					} catch (NullPointerException e) {
-						// TODO: handle exception
-						System.out.println(coordinates.get(k));
-					}
-					k += 1;
-				}
-				j += 1;
-			}
-			if (j >= paths.size()) {
-				System.out.println("client " + client.getName() + " est non visité ");
-				System.out.println(
-						"********************************************************************************************************");
-			}
-		}
-	}
-
-	/*
-	 * for (int i = 0; i < paths.size(); i++) { System.out.println(paths.get(i)); }
-	 */
 	private static List<Coordinate> getDetails(String token, Long beginTime, Long endTime,Long deviceId) {
 
 		body = new JSONObject();
@@ -230,7 +269,7 @@ public class hello {
 		body.accumulate("endDate", df);
 		body.accumulate("startDate", db);
 		paths = new ArrayList<Path>();
-		//System.out.println("token ====>" + token);
+		
 		try {
 			jsonResponse = Unirest.post(urlPaths+deviceId).header("content-Type", "application/json;charset=UTF-8")
 					.header("Authorization", token).header("Accept", "application/json").body(body.toString()).asJson();
@@ -244,7 +283,9 @@ public class hello {
 					path.setEndPathTime(c.getLong("endPathTime"));
 					path.setBeginPathTime(c.getLong("beginPathTime"));
 					path.setDeviceId(c.getInt("deviceId"));
-
+					path.setBeginPathLatitude(c.getDouble("beginPathLatitude"));
+					path.setBeginPathLongitude(c.getDouble("beginPathLongitude"));
+					path.setNextStopDurationStr(c.getString("nextStopDurationStr"));
 					List<Coordinate> l = getDetails(token, path.getBeginPathTime(), path.getEndPathTime(),deviceId);
 					path.setCoordinates(l);
 					//System.out.println(path);
@@ -259,28 +300,5 @@ public class hello {
 		return paths;
 	}
 
-	/*private static void getCLientList() {
-	clientList = new ArrayList<Client>();
-	try {
-		jsonResponse = Unirest.get("http://127.0.0.1:8000/missiondriverpoi/21").asJson();
-		if (jsonResponse.getStatus() == 200) {
-			JSONArray result = jsonResponse.getBody().getArray();
-			for (int i = 0; i < result.length(); i++) {
-				JSONObject obj = result.getJSONObject(i);
-				Client client = new Client();
-				client.setAddress(obj.getString("address"));
-				client.setLatitude(obj.getString("latitude"));
-				client.setLongitude(obj.getString("longitude"));
-				client.setName(obj.getString("name"));
-				client.setPointInterestId(obj.getString("point_interest_id"));
-				clientList.add(client);
-
-			}
-		}
-	} catch (UnirestException e1) {
-		// TODO Auto-generated catch block
-		// System.out.println(el);
-	}
-
-}*/
+	
 }
